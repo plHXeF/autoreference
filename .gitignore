@@ -1,0 +1,36 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+
+# Runtime state and generated exports
+.autoreference/
+output/
+checkpoint.pkl
+keyword_cache.json
+accepted_references.json
+citations.csv
+references.bib
+zhizhen_bibtex/
+
+# Private/local research material from the prototype
+paper.txt
+driver/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

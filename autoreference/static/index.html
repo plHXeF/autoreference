@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="输入一个学术论断，检索、评估并导出可能的参考文献。"
+    />
+    <title>AutoReference · 候选引用检索</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="masthead">
+        <a class="brand" href="/" aria-label="AutoReference 首页">
+          <span class="brand-mark">AR</span>
+          <span>AutoReference</span>
+        </a>
+        <div id="runtime-status" class="runtime-status" aria-live="polite">正在读取配置…</div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <p class="eyebrow">CLAIM → EVIDENCE</p>
+          <h1>先找到可能的引用，<br />再由你决定要不要用。</h1>
+          <p class="hero-copy">
+            输入论文中的一句话。系统会检索公开学术数据源，保守评估候选文献，
+            并导出 BibTeX、CSV 或 JSON。
+          </p>
+        </section>
+
+        <section class="search-panel" aria-labelledby="search-title">
+          <h2 id="search-title" class="visually-hidden">检索设置</h2>
+          <form id="search-form">
+            <label for="claim" class="field-label">需要引用支持的论断</label>
+            <textarea
+              id="claim"
+              name="claim"
+              rows="5"
+              minlength="3"
+              maxlength="8000"
+              required
+              placeholder="例如：Swin Transformer 通过移位窗口在控制计算量的同时建模跨窗口信息。"
+            ></textarea>
+
+            <div class="controls-row">
+              <fieldset>
+                <legend>检索源</legend>
+                <label class="check-option">
+                  <input type="checkbox" name="source" value="openalex" checked />
+                  <span>OpenAlex</span>
+                </label>
+                <label class="check-option">
+                  <input type="checkbox" name="source" value="crossref" checked />
+                  <span>Crossref</span>
+                </label>
+                <label class="check-option experimental">
+                  <input type="checkbox" name="source" value="zhizhen" />
+                  <span>知真 <small>待校园网验证</small></span>
+                </label>
+              </fieldset>
+
+              <div class="control-stack">
+                <label for="limit">每次检索数量</label>
+                <select id="limit" name="limit">
+                  <option value="5">5</option>
+                  <option value="8" selected>8</option>
+                  <option value="12">12</option>
+                </select>
+              </div>
+
+              <label class="llm-toggle">
+                <input id="use-llm" type="checkbox" checked />
+                <span>
+                  <strong>AI 保守评估</strong>
+                  <small>无 Key 时自动降级</small>
+                </span>
+              </label>
+
+              <button id="submit-button" class="primary-button" type="submit">
+                <span>搜索候选引用</span>
+                <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section id="result-section" class="results" hidden aria-live="polite">
+          <div class="results-heading">
+            <div>
+              <p class="eyebrow">CANDIDATES</p>
+              <h2 id="result-count">候选文献</h2>
+            </div>
+            <div class="export-actions" aria-label="导出选中文献">
+              <span id="selected-count">已选 0 篇</span>
+              <button type="button" data-export="bibtex">BibTeX</button>
+              <button type="button" data-export="csv">CSV</button>
+              <button type="button" data-export="json">JSON</button>
+            </div>
+          </div>
+          <div id="warnings" class="warnings" hidden></div>
+          <div id="query-summary" class="query-summary"></div>
+          <div id="result-list" class="result-list"></div>
+        </section>
+      </main>
+
+      <footer>
+        <p>候选结果不是事实核验。引用前请阅读摘要、原文并确认文献确实支持你的表述。</p>
+        <a href="/docs" target="_blank" rel="noreferrer">API 文档</a>
+      </footer>
+    </div>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
+
