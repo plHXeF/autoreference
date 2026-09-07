@@ -29,9 +29,19 @@ def citation_key(candidate: ReferenceCandidate) -> str:
 
 def _bibtex_escape(value: str) -> str:
     value = re.sub(r"\s+", " ", value).strip()
-    for raw, escaped in (("&", r"\&"), ("%", r"\%"), ("#", r"\#")):
-        value = value.replace(raw, escaped)
-    return value
+    escapes = {
+        "\\": r"\textbackslash{}",
+        "{": r"\{",
+        "}": r"\}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}",
+    }
+    return "".join(escapes.get(character, character) for character in value)
 
 
 def to_bibtex(candidate: ReferenceCandidate) -> str:

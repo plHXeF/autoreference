@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from autoreference.llm import LLMClient
 from autoreference.models import (
@@ -75,10 +75,23 @@ class SearchService:
         llm: LLMClient | None = None,
         *,
         max_candidates_for_judging: int = 20,
+        provider_factories: dict[str, Callable[[], SearchProvider]] | None = None,
     ) -> None:
         self.providers = providers
+        self.provider_factories = provider_factories or {}
         self.llm = llm
         self.max_candidates_for_judging = max_candidates_for_judging
+
+    @property
+    def available_providers(self) -> list[str]:
+        return list(dict.fromkeys([*self.providers, *self.provider_factories]))
+
+    def _get_provider(self, source: str) -> SearchProvider | None:
+        provider = self.providers.get(source)
+        if provider is None and source in self.provider_factories:
+            provider = self.provider_factories[source]()
+            self.providers[source] = provider
+        return provider
 
     async def search(self, request: SearchRequest) -> SearchResult:
         warnings: list[str] = []
@@ -98,7 +111,7 @@ class SearchService:
 
         selected_providers = []
         for source in request.sources:
-            provider = self.providers.get(source)
+            provider = self._get_provider(source)
             if provider:
                 selected_providers.append(provider)
             else:

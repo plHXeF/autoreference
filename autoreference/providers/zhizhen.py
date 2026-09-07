@@ -1,11 +1,28 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import urllib.parse
 
 from autoreference.config import Settings
 from autoreference.models import ReferenceCandidate
 from autoreference.providers.base import ProviderError
+
+MISSING_SELENIUM_MESSAGE = (
+    "Zhizhen support is not installed. Run: pip install -e .[zhizhen]"
+)
+
+
+def _clean_detail_title(value: str) -> str:
+    return re.sub(r"^\s*[\[［][^\]］]+[\]］]\s*", "", value).strip()
+
+
+def _browser_error_detail(exc: Exception, driver) -> str:
+    detail = str(exc).strip() or type(exc).__name__
+    try:
+        return f"{detail} (URL: {driver.current_url}; title: {driver.title})"
+    except Exception:
+        return detail
 
 
 class ZhizhenProvider:
@@ -21,9 +38,7 @@ class ZhizhenProvider:
             from selenium import webdriver
             from selenium.webdriver.chrome.service import Service
         except ImportError as exc:
-            raise ProviderError(
-                "Zhizhen support is not installed. Run: pip install -e .[zhizhen]"
-            ) from exc
+            raise ProviderError(MISSING_SELENIUM_MESSAGE) from exc
 
         options = webdriver.ChromeOptions()
         if self.settings.browser_headless:
@@ -36,15 +51,24 @@ class ZhizhenProvider:
         return webdriver.Chrome(service=service, options=options)
 
     def _search_blocking(self, query: str, limit: int) -> list[ReferenceCandidate]:
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support import expected_conditions as EC
-        from selenium.webdriver.support.ui import WebDriverWait
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support import expected_conditions as EC
+            from selenium.webdriver.support.ui import WebDriverWait
+        except ImportError as exc:
+            raise ProviderError(MISSING_SELENIUM_MESSAGE) from exc
 
         driver = self._create_driver()
         candidates: list[ReferenceCandidate] = []
+        detail_errors: list[Exception] = []
         try:
             url = self.settings.zhizhen_url.format(query=urllib.parse.quote(query))
             driver.get(url)
+            if "403" in driver.title:
+                raise ProviderError(
+                    f"Zhizhen access was rejected (URL: {driver.current_url}; "
+                    f"title: {driver.title})"
+                )
             wait = WebDriverWait(driver, 15)
             wait.until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "h3.fx-column-title > a"))
@@ -58,9 +82,13 @@ class ZhizhenProvider:
             for detail_url in filter(None, links):
                 try:
                     driver.get(detail_url)
-                    title = wait.until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "title"))
-                    ).text.strip()
+                    title = _clean_detail_title(
+                        wait.until(
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, "div.savelist_con div.card_name > h3.fl")
+                            )
+                        ).text
+                    )
                     try:
                         abstract = driver.find_element(
                             By.XPATH, '//dt[span[text()="摘要"]]/following-sibling::dd[1]'
@@ -77,10 +105,21 @@ class ZhizhenProvider:
                                 url=detail_url,
                             )
                         )
-                except Exception:
+                except Exception as exc:
+                    detail_errors.append(exc)
                     continue
+            if links and not candidates:
+                detail = str(detail_errors[0]) if detail_errors else "no detail page was usable"
+                raise ProviderError(
+                    f"Zhizhen returned {len(links)} detail link(s), "
+                    f"but none could be parsed: {detail}"
+                )
+        except ProviderError:
+            raise
         except Exception as exc:
-            raise ProviderError(f"Zhizhen browser search failed: {exc}") from exc
+            raise ProviderError(
+                f"Zhizhen browser search failed: {_browser_error_detail(exc, driver)}"
+            ) from exc
         finally:
             driver.quit()
         return candidates

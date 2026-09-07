@@ -47,6 +47,47 @@ class FakeLLM:
         return None
 
 
+async def test_lazy_provider_is_only_created_when_selected() -> None:
+    created = 0
+
+    def create_provider() -> FakeProvider:
+        nonlocal created
+        created += 1
+        return FakeProvider()
+
+    service = SearchService({}, provider_factories={"fake": create_provider})
+
+    assert service.available_providers == ["fake"]
+    unavailable = await service.search(
+        SearchRequest(
+            claim="A claim with no matching provider",
+            sources=["other"],
+            max_results_per_source=5,
+            use_llm=False,
+        )
+    )
+    assert created == 0
+    assert unavailable.warnings == ["Unknown or unavailable source: other"]
+
+    await service.search(
+        SearchRequest(
+            claim="Swin Transformer for geological image analysis.",
+            sources=["fake"],
+            max_results_per_source=5,
+            use_llm=False,
+        )
+    )
+    await service.search(
+        SearchRequest(
+            claim="Swin Transformer for geological image analysis.",
+            sources=["fake"],
+            max_results_per_source=5,
+            use_llm=False,
+        )
+    )
+    assert created == 1
+
+
 async def test_service_uses_batch_assessment_and_deduplicates() -> None:
     service = SearchService({"fake": FakeProvider()}, FakeLLM())
     result = await service.search(
@@ -75,4 +116,3 @@ async def test_service_degrades_without_llm() -> None:
     assert result.warnings
     assert result.candidates[0].assessment.assessed_by == "local-heuristic"
     assert result.candidates[0].assessment.can_cite is False
-

@@ -26,9 +26,22 @@ def test_bibtex_is_deterministic_and_escaped() -> None:
     assert "doi = {10.1000/xyz}" in output
 
 
+def test_bibtex_escapes_all_latex_special_characters() -> None:
+    item = ReferenceCandidate(
+        source="test",
+        title=r"CO_2 costs $5 & rises 50% #1 ~ ^ \ {draft}",
+    )
+
+    output = export_bibtex([item])
+
+    assert (
+        r"title = {CO\_2 costs \$5 \& rises 50\% \#1 "
+        r"\textasciitilde{} \textasciicircum{} \textbackslash{} \{draft\}},"
+    ) in output
+
+
 def test_csv_is_real_csv() -> None:
     rows = list(csv.reader(io.StringIO(export_csv([candidate()]))))
     assert rows[0][0] == "citation_key"
     assert rows[1][1] == "Attention & geology: a review"
     assert rows[1][-1] == "88"
-

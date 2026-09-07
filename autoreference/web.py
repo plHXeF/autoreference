@@ -17,7 +17,7 @@ STATIC_DIR = Path(__file__).with_name("static")
 
 load_dotenv()
 settings = Settings.from_env()
-service = create_service(settings, include_zhizhen=True)
+service = create_service(settings, lazy_zhizhen=True)
 
 
 @asynccontextmanager
@@ -49,7 +49,7 @@ async def health() -> dict[str, object]:
         "query_model": settings.query_model if settings.llm_enabled else None,
         "judge_model": settings.judge_model if settings.llm_enabled else None,
         "reasoning_effort": settings.reasoning_effort,
-        "providers": list(service.providers),
+        "providers": service.available_providers,
         "unverified_providers": ["zhizhen"],
     }
 
