@@ -1,0 +1,20 @@
+name: Tests and portable install
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest
+      - run: ruff check src tests scripts skills/autoreference/scripts main.py utils.py
+      - run: python scripts/build_release.py
+      - run: python scripts/smoke_install.py --wheel dist/autoreference-0.2.0a0-py3-none-any.whl

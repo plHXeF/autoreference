@@ -1,6 +1,32 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def public_url(value: str) -> str:
+    parsed = urlsplit(value)
+    private = {
+        "api_key",
+        "apikey",
+        "access_token",
+        "token",
+        "ticket",
+        "session",
+        "sessionid",
+        "password",
+        "authorization",
+        "auth",
+        "code",
+    }
+    query = [
+        (k, v)
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if k.casefold() not in private
+    ]
+    host = parsed.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parsed.scheme, host, parsed.path, urlencode(query), parsed.fragment))
 
 
 class CitationAssessment(BaseModel):
@@ -37,6 +63,7 @@ class ReferenceCandidate(BaseModel):
     conflicts: list[dict] = Field(default_factory=list)
     metadata_status: str = "unverified"
     verification: dict = Field(default_factory=dict)
+    metadata_changes: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def provenance(self) -> ReferenceCandidate:
@@ -59,6 +86,13 @@ class ReferenceCandidate(BaseModel):
                 doi = doi[len(prefix) :]
                 break
         return doi.lower() or None
+
+    @field_validator("url", "source_id")
+    @classmethod
+    def remove_session_parameters(cls, value: str | None) -> str | None:
+        if value and value.startswith(("http://", "https://")):
+            return public_url(value)
+        return value
 
 
 class SearchQueries(BaseModel):

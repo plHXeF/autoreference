@@ -1,7 +1,24 @@
 import httpx
+import pytest
 
+from autoreference.providers.base import ProviderError
 from autoreference.providers.crossref import CrossrefProvider
 from autoreference.providers.openalex import OpenAlexProvider
+
+
+async def test_openalex_key_is_not_leaked_in_errors():
+    provider = OpenAlexProvider(
+        headers={},
+        api_key="private-key",
+        transport=httpx.MockTransport(lambda request: httpx.Response(401)),
+    )
+    try:
+        with pytest.raises(ProviderError) as captured:
+            await provider.search("a query", 3)
+        assert captured.value.code == "auth_required"
+        assert "private-key" not in str(captured.value)
+    finally:
+        await provider.close()
 
 
 async def test_openalex_maps_api_record() -> None:
@@ -68,4 +85,3 @@ async def test_crossref_maps_api_record_and_strips_markup() -> None:
     assert results[0].abstract == "Some evidence."
     assert results[0].authors == ["Lin Chen"]
     assert results[0].year == 2022
-

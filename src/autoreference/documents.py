@@ -52,6 +52,15 @@ def read_bibtex(text: str, warnings: list[str]) -> list[dict]:
             doi=doi,
             url=entry.get("url"),
             bibtex=bibtexparser.dumps(single),
+            volume=entry.get("volume"),
+            issue=entry.get("number"),
+            pages=entry.get("pages"),
+            publication_type={
+                "article": "journal-article",
+                "inproceedings": "proceedings-article",
+                "book": "book",
+                "incollection": "book-chapter",
+            }.get(entry["ENTRYTYPE"]),
         )
         entries.append({"key": key, "candidate": item.model_dump(mode="json")})
     # Do not silently accept a parser that recovered only part of a file.
@@ -64,14 +73,22 @@ def read_bibtex(text: str, warnings: list[str]) -> list[dict]:
 def _plain_references(lines: list[str], warnings: list[str]) -> list[dict]:
     """Only structured BibTeX is exported automatically; raw citations need resolution."""
     entries = []
-    for index, line in enumerate(lines, 1):
+    numbered = any(re.match(r"\s*\[[^]]+\]|\s*\d+[.)]\s", line) for line in lines)
+    blocks: list[str] = []
+    for line in lines:
+        marker = re.match(r"\s*\[[^]]+\]|\s*\d+[.)]\s", line)
+        if numbered and not marker and blocks and line.strip():
+            blocks[-1] += " " + line.strip()
+        elif line.strip():
+            blocks.append(line.strip())
+    for index, line in enumerate(blocks, 1):
         if not line.strip():
             continue
-        key_match = re.match(r"\s*\[([^]]+)\]\s*", line)
+        key_match = re.match(r"\s*\[([^]]+)\]\s*|\s*(\d+)[.)]\s", line)
         doi = DOI.search(line)
         entries.append(
             {
-                "key": key_match[1] if key_match else f"existing{index}",
+                "key": (key_match[1] or key_match[2]) if key_match else f"existing{index}",
                 "raw": line,
                 "doi_hint": doi[0].rstrip(".,;") if doi else None,
                 "candidate": None,
@@ -142,12 +159,13 @@ def _docx(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[
     return paragraphs, references
 
 
-def _tex(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[dict]]:
+def _tex(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[dict], dict]:
     project_root = path.parent.resolve()
     active: set[Path] = set()
     seen_bibs: set[Path] = set()
     references: list[dict] = []
     paragraphs: list[tuple[str, str]] = []
+    source_hashes = {}
     converter = LatexNodes2Text()
 
     def resolve(name: str, suffix: str, parent: Path) -> Path | None:
@@ -166,6 +184,7 @@ def _tex(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[d
             warnings.append(f"Circular TeX include: {file.name}")
             return
         active.add(file)
+        source_hashes[str(file)] = hashlib.sha256(file.read_bytes()).hexdigest()
         text = re.sub(r"(?<!\\)%[^\n]*", "", file.read_text(encoding="utf-8"))
         # Ignore preamble before the document environment, but retain bibliography declarations.
         bib_pattern = r"\\(?:bibliography|addbibresource)(?:\[[^]]*\])?\{([^}]+)\}"
@@ -174,10 +193,11 @@ def _tex(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[d
                 bib = resolve(name.strip(), ".bib", file.parent)
                 if bib and bib not in seen_bibs:
                     seen_bibs.add(bib)
+                    source_hashes[str(bib)] = hashlib.sha256(bib.read_bytes()).hexdigest()
                     references.extend(read_bibtex(bib.read_text(encoding="utf-8"), warnings))
         text = re.sub(bib_pattern, "", text)
         for body in re.findall(
-            r"\\begin\{thebibliography\}.*?\n(.*?)\\end\{thebibliography\}", text, re.S
+            r"\\begin\{thebibliography\}\{[^}]*\}(.*?)\\end\{thebibliography\}", text, re.S
         ):
             for key, value in re.findall(
                 r"\\bibitem(?:\[[^]]*\])?\{([^}]+)\}(.*?)(?=\\bibitem|\Z)", body, re.S
@@ -215,7 +235,7 @@ def _tex(path: Path, warnings: list[str]) -> tuple[list[tuple[str, str]], list[d
         active.remove(file)
 
     visit(path.resolve())
-    return paragraphs, references
+    return paragraphs, references, source_hashes
 
 
 def parse_document(*, text: str | None = None, path: Path | None = None) -> dict:
@@ -223,12 +243,14 @@ def parse_document(*, text: str | None = None, path: Path | None = None) -> dict
         raise ValueError("Provide exactly one of text or input file.")
     warnings: list[str] = []
     references: list[dict] = []
+    source_hashes = {}
     if path:
         path = path.resolve()
+        source_hashes[str(path)] = hashlib.sha256(path.read_bytes()).hexdigest()
         if path.suffix.lower() == ".docx":
             paragraphs, references = _docx(path, warnings)
         elif path.suffix.lower() == ".tex":
-            paragraphs, references = _tex(path, warnings)
+            paragraphs, references, source_hashes = _tex(path, warnings)
         elif path.suffix.lower() == ".txt":
             text = path.read_text(encoding="utf-8")
             paragraphs = [
@@ -239,6 +261,7 @@ def parse_document(*, text: str | None = None, path: Path | None = None) -> dict
         else:
             raise ValueError("Supported document formats: .txt, .docx, .tex")
     else:
+        source_hashes["inline"] = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
         paragraphs = [
             (f"paragraph:{i}", p.strip())
             for i, p in enumerate(re.split(r"\n\s*\n", text or ""), 1)
@@ -273,7 +296,12 @@ def parse_document(*, text: str | None = None, path: Path | None = None) -> dict
     segments = []
     for location, paragraph in body:
         segment_id = stable_id("s_", location + "\n" + paragraph)
-        statements = split_sentences(paragraph, minimum_length=3) or [paragraph]
+        statements = []
+        for sentence in split_sentences(paragraph, minimum_length=3) or [paragraph]:
+            if statements and re.fullmatch(r"(?:\[(?:cite:[^]]+|[\d,\s]+)\]\s*)+", sentence):
+                statements[-1] += " " + sentence
+            else:
+                statements.append(sentence)
         for index, sentence in enumerate(statements):
             citation_keys = re.findall(r"\[cite:([^]]+)\]|\[(\d+(?:\s*,\s*\d+)*)\]", sentence)
             keys = [
@@ -297,4 +325,5 @@ def parse_document(*, text: str | None = None, path: Path | None = None) -> dict
         "claims": segments,
         "existing_references": list(unique_refs.values()),
         "warnings": warnings,
+        "source_hashes": source_hashes,
     }

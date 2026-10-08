@@ -1,5 +1,7 @@
 import hashlib
+import json
 import zipfile
+from xml.sax.saxutils import escape
 
 from autoreference.documents import parse_document, read_bibtex
 
@@ -39,6 +41,7 @@ def test_docx_tables_fields_footnotes_and_references(tmp_path):
     assert any("table" in c["text"] for c in result["claims"])
     assert result["existing_references"][0]["key"] == "1"
     assert any("ZOTERO" in w for w in result["warnings"])
+    assert any("A note" in c["text"] for c in result["claims"])
 
 
 def test_tex_includes_bibliography_keys_and_does_not_execute(tmp_path):
@@ -89,3 +92,44 @@ A body claim \cite{liu}.
     parsed = parse_document(path=file)
     assert parsed["existing_references"][0]["key"] == "liu"
     assert all("Transformer" not in c["text"] for c in parsed["claims"])
+
+
+def test_docx_csl_citation_fields_are_structured(tmp_path):
+    file = tmp_path / "paper.docx"
+    data = {
+        "citationItems": [
+            {
+                "id": 42,
+                "itemData": {
+                    "title": "Actual title",
+                    "author": [{"given": "Jane", "family": "Doe"}],
+                    "issued": {"date-parts": [[2021]]},
+                    "DOI": "10.1234/example",
+                },
+            }
+        ]
+    }
+    field = escape(" ADDIN ZOTERO_ITEM CSL_CITATION " + json.dumps(data))
+    document = (
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<w:body><w:p><w:r><w:t>A claim.</w:t></w:r>"
+        f"<w:r><w:instrText>{field}</w:instrText></w:r></w:p></w:body></w:document>"
+    )
+    with zipfile.ZipFile(file, "w") as archive:
+        archive.writestr("word/document.xml", document)
+    parsed = parse_document(path=file)
+    ref = parsed["existing_references"][0]
+    assert ref["candidate"]["title"] == "Actual title"
+    assert ref["candidate"]["year"] == 2021
+    assert ref["key"] in parsed["claims"][0]["citation_keys"]
+
+
+def test_wrapped_numbered_references_are_not_split_into_fake_entries():
+    result = parse_document(
+        text="A claim.\n\nReferences\n[1] Jane Doe.\n"
+        "Actual title. 2021.\n[2] Someone. Another title. 2020."
+    )
+    refs = result["existing_references"]
+    assert len(refs) == 2
+    assert refs[0]["key"] == "1"
+    assert "Actual title" in refs[0]["raw"]

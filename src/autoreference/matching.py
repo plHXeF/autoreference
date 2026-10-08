@@ -44,6 +44,7 @@ def merge_candidate(
             data["source_records"].append(record)
     data["match_method"] = method
     data["conflicts"] = [*left.conflicts, *right.conflicts]
+    data["metadata_changes"] = [*left.metadata_changes, *right.metadata_changes]
     for field in (
         "title",
         "abstract",

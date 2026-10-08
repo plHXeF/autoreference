@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from dotenv import load_dotenv
 
 from autoreference import __version__
 from autoreference.config import Settings
@@ -62,6 +63,11 @@ def read_payload(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def agent_settings() -> Settings:
+    load_dotenv()
+    return Settings.from_env()
+
+
 @task_app.command("prepare")
 def prepare_command(
     output: Annotated[Path, typer.Option("--output", "-o")],
@@ -80,7 +86,7 @@ def search_command(
     emit(
         "task.search",
         lambda: asyncio.run(
-            search_task(directory, read_payload(requests), Settings.from_env(), refresh=refresh)
+            search_task(directory, read_payload(requests), agent_settings(), refresh=refresh)
         ),
     )
 
@@ -96,7 +102,7 @@ def verify_command(
         lambda: asyncio.run(
             verify_task(
                 directory,
-                Settings.from_env(),
+                agent_settings(),
                 evidence=read_payload(evidence) if evidence else None,
                 references=read_payload(references) if references else None,
             )
@@ -137,7 +143,7 @@ def inspect_command(
 def access_status() -> None:
     from autoreference.access import status
 
-    emit("access.status", lambda: status(Settings.from_env()))
+    emit("access.status", lambda: status(agent_settings()))
 
 
 @access_app.command("login")
@@ -151,7 +157,7 @@ def access_login(timeout: Annotated[int, typer.Option(min=1, max=600)] = 180) ->
     )
 
     def run():
-        result = login(Settings.from_env(), timeout)
+        result = login(agent_settings(), timeout)
         return {
             "status": "success" if result["state"] == "ready" else "needs_user_action",
             **result,
@@ -164,12 +170,12 @@ def access_login(timeout: Annotated[int, typer.Option(min=1, max=600)] = 180) ->
 def access_reset() -> None:
     from autoreference.access import reset
 
-    emit("access.reset", lambda: reset(Settings.from_env()))
+    emit("access.reset", lambda: reset(agent_settings()))
 
 
 def doctor() -> None:
     def inspect():
-        settings = Settings.from_env()
+        settings = agent_settings()
         return {
             "version": __version__,
             "python": sys.version.split()[0],

@@ -27,3 +27,14 @@ def test_different_years_without_doi_are_not_merged():
     left = paper("a")
     right = left.model_copy(update={"year": 2021, "source": "b"})
     assert len(deduplicate([left, right])) == 2
+
+
+def test_session_parameters_are_not_recorded():
+    reference = paper(
+        "campus",
+        url="https://user:secret@example.com/paper?id=42&ticket=private",
+        source_id="https://example.com/paper?api_key=secret&id=42",
+    )
+    assert reference.url == "https://example.com/paper?id=42"
+    assert "secret" not in str(reference.model_dump())
+    assert "private" not in str(reference.model_dump())

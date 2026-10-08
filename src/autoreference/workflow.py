@@ -11,14 +11,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from autoreference.config import Settings
 from autoreference.documents import parse_document, stable_id
 from autoreference.exporters import export_bibtex
 from autoreference.factory import create_service
 from autoreference.matching import deduplicate, normalized_title, same_record
-from autoreference.models import ReferenceCandidate
+from autoreference.models import ReferenceCandidate, public_url
 from autoreference.providers.base import ProviderError
 from autoreference.text import search_tokens
 from autoreference.verification import resolve_reference
@@ -46,6 +46,11 @@ class EvidenceInput(StrictModel):
     url: str
     text: str = Field(min_length=1, max_length=100_000)
     kind: str = Field(pattern=r"^(abstract|full_text)$")
+
+    @field_validator("url")
+    @classmethod
+    def sanitize_url(cls, value: str) -> str:
+        return public_url(value)
 
 
 class ExistingInput(StrictModel):
@@ -108,7 +113,7 @@ def load_task(directory: Path) -> dict:
 
 def prepare(directory: Path, *, text: str | None = None, path: Path | None = None) -> dict:
     document = parse_document(text=text, path=path)
-    fingerprint = stable_id("input_", json.dumps(document, ensure_ascii=False, sort_keys=True))
+    fingerprint = stable_id("input_", json.dumps(document["source_hashes"], sort_keys=True))
     with task_lock(directory) as folder:
         if (folder / "task.json").exists():
             state = load_task(folder)
@@ -186,6 +191,7 @@ async def search_task(
                     raise ValueError("Unknown claim_id or invalid query.")
             semaphore = asyncio.Semaphore(4)
             campus_lock = asyncio.Lock()
+            campus_problem: str | None = None
             for item in batch.requests:
                 sources = item.sources or ["openalex", "crossref"] + (
                     ["anysearch"] if settings.anysearch_api_key else []
@@ -197,6 +203,7 @@ async def search_task(
                     continue
 
                 async def run(source: str, query: str, limit: int) -> tuple[dict, list]:
+                    nonlocal campus_problem
                     async with semaphore:
                         try:
                             provider = service._get_provider(source)
@@ -208,7 +215,18 @@ async def search_task(
                                 }, []
                             if source == "zhizhen":
                                 async with campus_lock:
-                                    results = await provider.search(query, limit)
+                                    if campus_problem:
+                                        return {
+                                            "source": source,
+                                            "query": query,
+                                            "status": campus_problem,
+                                            "reused_failure": True,
+                                        }, []
+                                    try:
+                                        results = await provider.search(query, limit)
+                                    except ProviderError as exc:
+                                        campus_problem = exc.code
+                                        raise
                             else:
                                 results = await provider.search(query, limit)
                             return {
@@ -229,6 +247,20 @@ async def search_task(
                         for q in dict.fromkeys(item.queries)
                     )
                 )
+                if "zhizhen" in sources and not any(s in sources for s in ("openalex", "crossref")):
+                    campus_failed = any(
+                        o["source"] == "zhizhen" and o["status"] not in {"success", "empty"}
+                        for o, _ in outcomes
+                    )
+                    if campus_failed:
+                        fallback = await asyncio.gather(
+                            *(
+                                run(s, q.strip(), item.limit)
+                                for s in ("openalex", "crossref")
+                                for q in dict.fromkeys(item.queries)
+                            )
+                        )
+                        outcomes.extend(fallback)
                 candidates = deduplicate(c for _, results in outcomes for c in results)
                 stopwords = {"the", "and", "for", "with", "using", "based", "of", "in", "on"}
                 query_tokens = [search_tokens(q) - stopwords for q in item.queries]
@@ -265,7 +297,8 @@ async def search_task(
                 # Checkpoint each completed claim; interrupted batches retain previous claims.
                 state["status"] = "searched"
                 atomic_json(folder / "task.json", state)
-            outcomes = [o for run in state["search_runs"] for o in run["outcomes"]]
+            latest_runs = {run["id"]: run for run in state["search_runs"]}
+            outcomes = [o for run in latest_runs.values() for o in run["outcomes"]]
             failures = [o for o in outcomes if o["status"] not in {"success", "empty"}]
             usable = any(o["status"] in {"success", "empty"} for o in outcomes)
             campus_action = any(
@@ -336,7 +369,10 @@ async def verify_task(
                 state["evidence"][key] = {**item.model_dump(), "origin": "agent_supplied"}
             for key, value in list(state["candidates"].items()):
                 candidate = ReferenceCandidate.model_validate(value)
-                if candidate.metadata_status == "verified":
+                if (
+                    candidate.metadata_status == "verified"
+                    and candidate.verification.get("normalization_revision") == 1
+                ):
                     continue
                 try:
                     resolved = await resolve_reference(client, candidate=candidate)
@@ -366,6 +402,13 @@ async def verify_task(
                     ref["resolution"] = "unavailable"
                 atomic_json(folder / "task.json", state)
             state["status"] = "verified"
+            unresolved = any(
+                v["metadata_status"] != "verified" for v in state["candidates"].values()
+            )
+            unresolved |= any(
+                not r.get("candidate_id") for r in state["document"]["existing_references"]
+            )
+            state["protocol_status"] = "partial" if unresolved else "success"
             atomic_json(folder / "task.json", state)
             return state
     finally:
@@ -380,7 +423,12 @@ def finalize(directory: Path, payload: dict) -> dict:
         claims = {c["id"] for c in state["document"]["claims"]}
         if any(c not in claims or not reason.strip() for c, reason in batch.skipped_claims.items()):
             raise ValueError("Skipped claims require a known claim_id and nonempty reason.")
+        if set(batch.skipped_claims) & {d.claim_id for d in batch.decisions}:
+            raise ValueError("A claim cannot be skipped and assessed in the same submission.")
         previous = {(d["claim_id"], d["candidate_id"]): d for d in state["decisions"]}
+        previous = {
+            key: value for key, value in previous.items() if key[0] not in batch.skipped_claims
+        }
         for decision in batch.decisions:
             if decision.claim_id not in claims or decision.candidate_id not in state["candidates"]:
                 raise ValueError("Decision contains an unknown claim_id or candidate_id.")
@@ -401,6 +449,7 @@ def finalize(directory: Path, payload: dict) -> dict:
                         "Quote must be an exact, nontrivial passage from recorded evidence."
                     )
             previous[(decision.claim_id, decision.candidate_id)] = decision.model_dump()
+            state["skipped_claims"].pop(decision.claim_id, None)
         state["decisions"] = list(previous.values())
         state["skipped_claims"].update(batch.skipped_claims)
         selected: dict[str, ReferenceCandidate] = {}
@@ -419,11 +468,13 @@ def finalize(directory: Path, payload: dict) -> dict:
                         "key": ref["key"],
                         "candidate_id": key,
                         "metadata_status": candidate.metadata_status,
+                        "metadata_changes": candidate.metadata_changes,
                     }
                 )
             else:
                 unresolved_existing.append(ref)
         recommended = []
+        existing_ids = set(selected)
         supported_claims = set()
         for decision in state["decisions"]:
             candidate = ReferenceCandidate.model_validate(
@@ -431,9 +482,15 @@ def finalize(directory: Path, payload: dict) -> dict:
             )
             if decision["support"] == "supported" and candidate.metadata_status == "verified":
                 selected.setdefault(decision["candidate_id"], candidate)
-                recommended.append(decision)
+                recommended.append(
+                    {
+                        **decision,
+                        "origin": "existing" if decision["candidate_id"] in existing_ids else "new",
+                    }
+                )
                 supported_claims.add(decision["claim_id"])
         unresolved_claims = sorted(claims - supported_claims - state["skipped_claims"].keys())
+        new_reference_count = len(set(selected) - existing_ids)
         entries = []
         used_keys: set[str] = set()
         citation_keys = {}
@@ -458,7 +515,7 @@ def finalize(directory: Path, payload: dict) -> dict:
                 if copy.bibtex:
                     import bibtexparser
 
-                    database = bibtexparser.loads(copy.bibtex)
+                    database = bibtexparser.loads(export_bibtex([copy]))
                     if len(database.entries) != 1:
                         raise ValueError("Existing BibTeX must contain exactly one valid entry.")
                     database.entries[0]["ID"] = key
@@ -474,6 +531,7 @@ def finalize(directory: Path, payload: dict) -> dict:
             "status": "partial" if unresolved_claims or unresolved_existing else "success",
             "existing": existing,
             "recommended": recommended,
+            "new_reference_count": new_reference_count,
             "citation_keys": citation_keys,
             "unresolved_existing": unresolved_existing,
             "unresolved_claims": unresolved_claims,
@@ -501,7 +559,8 @@ def finalize(directory: Path, payload: dict) -> dict:
             "# AutoReference report",
             "",
             f"Status: {report['status']}",
-            f"Existing references: {len(existing)}; new recommendations: {len(recommended)}",
+            f"Existing references: {len(existing)}; "
+            f"new recommended references: {new_reference_count}",
             f"Unresolved claims: {len(unresolved_claims)}; "
             f"unresolved references: {len(unresolved_existing)}",
             "",
@@ -522,6 +581,18 @@ def finalize(directory: Path, payload: dict) -> dict:
             if c["id"] in unresolved_claims
         ]
         lines += ["", "## Warnings", ""] + [f"- {w}" for w in report["warnings"]]
+        lines += ["", "## Existing references", ""]
+        lines += [f"- {ref['key']}: metadata {ref['metadata_status']}" for ref in existing]
+        lines += ["", "## Recommended links", ""]
+        for decision in recommended:
+            keys = ", ".join(citation_keys.get(decision["candidate_id"], []))
+            lines.append(f"- {decision['claim_id']} → {keys} ({decision['origin']})")
+        lines += ["", "## Unresolved existing references", ""]
+        lines += [f"- {ref['key']}: {ref.get('raw', '')}" for ref in unresolved_existing]
+        lines += ["", "## Data source outcomes", ""]
+        for run in state["search_runs"]:
+            for outcome in run["outcomes"]:
+                lines.append(f"- {run['claim_id']}: {outcome['source']} — {outcome['status']}")
         (folder / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         for name in artifacts:
             os.chmod(folder / name, 0o600)
@@ -531,6 +602,7 @@ def finalize(directory: Path, payload: dict) -> dict:
             "status": report["status"],
             "artifacts": {name: str(folder / name) for name in artifacts},
             "reference_count": len(entries),
+            "new_reference_count": new_reference_count,
             "unresolved_claims": unresolved_claims,
             "unresolved_existing_count": len(unresolved_existing),
         }

@@ -42,7 +42,7 @@ class ZhizhenProvider:
             from selenium.webdriver.support import expected_conditions as EC
             from selenium.webdriver.support.ui import WebDriverWait
         except ImportError as exc:
-            raise ProviderError(MISSING_SELENIUM_MESSAGE) from exc
+            raise ProviderError(MISSING_SELENIUM_MESSAGE, code="browser_unavailable") from exc
 
         driver = self._create_driver()
         candidates: list[ReferenceCandidate] = []

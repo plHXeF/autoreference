@@ -45,3 +45,26 @@ def test_csv_is_real_csv() -> None:
     assert rows[0][0] == "citation_key"
     assert rows[1][1] == "Attention & geology: a review"
     assert rows[1][-1] == "88"
+
+
+def test_verified_existing_bibtex_is_enriched_without_changing_key():
+    import bibtexparser
+
+    item = candidate()
+    item.bibtex = "@misc{original,title={Attention & geology: a review},note={Keep this note}}"
+    item.metadata_status = "verified"
+    authoritative = item.model_copy(
+        update={
+            "volume": "3",
+            "pages": "10-20",
+            "publication_type": "journal-article",
+            "bibtex": None,
+        }
+    )
+    item.verification = {"authoritative_record": authoritative.model_dump()}
+    database = bibtexparser.loads(export_bibtex([item]))
+    assert database.entries[0]["ID"] == "original"
+    assert database.entries[0]["volume"] == "3"
+    assert database.entries[0]["pages"] == "10-20"
+    assert database.entries[0]["note"] == "Keep this note"
+    assert database.entries[0]["ENTRYTYPE"] == "article"

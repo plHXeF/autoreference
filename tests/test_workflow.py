@@ -192,6 +192,17 @@ def test_output_protection_and_stable_ids(tmp_path):
     assert (task / "references.bib").read_text() == "private original bibliography"
 
 
+def test_changed_included_bibliography_invalidates_resume(tmp_path):
+    source = tmp_path / "paper.tex"
+    source.write_text(r"\begin{document}A claim.\bibliography{refs}\end{document}")
+    bibliography = tmp_path / "refs.bib"
+    bibliography.write_text("@article{one,title={First title}}")
+    prepare(tmp_path / "task", path=source)
+    bibliography.write_text("@article{one,title={Changed title}}")
+    with pytest.raises(ValueError, match="another input"):
+        prepare(tmp_path / "task", path=source)
+
+
 async def test_failure_and_campus_fallback(tmp_path):
     class FailingProvider:
         async def search(self, query, limit):

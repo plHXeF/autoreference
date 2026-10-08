@@ -63,8 +63,11 @@ class CrossrefProvider:
         try:
             data = await request_json(self.client, "GET", self.endpoint, params=params)
             records = data.get("message", {}).get("items", [])
+        except httpx.HTTPStatusError as exc:
+            code = "auth_required" if exc.response.status_code in {401, 403} else "request_failed"
+            raise ProviderError(f"Crossref HTTP {exc.response.status_code}", code=code) from None
         except (httpx.HTTPError, ValueError) as exc:
-            raise ProviderError(f"Crossref request failed: {exc}") from exc
+            raise ProviderError("Crossref request failed", code="request_failed") from exc
 
         candidates: list[ReferenceCandidate] = []
         for record in records:

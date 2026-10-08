@@ -7,6 +7,8 @@ import json
 import re
 import unicodedata
 
+import bibtexparser
+
 from autoreference.models import ReferenceCandidate
 
 
@@ -46,6 +48,47 @@ def _bibtex_escape(value: str) -> str:
 
 def to_bibtex(candidate: ReferenceCandidate) -> str:
     if candidate.bibtex and candidate.bibtex.lstrip().startswith("@"):
+        if candidate.metadata_status == "verified" and candidate.verification.get(
+            "authoritative_record"
+        ):
+            database = bibtexparser.loads(candidate.bibtex)
+            if len(database.entries) != 1:
+                raise ValueError("Existing BibTeX must contain exactly one valid entry.")
+            authoritative = ReferenceCandidate.model_validate(
+                candidate.verification["authoritative_record"]
+            )
+            entry = database.entries[0]
+            entry_type = {
+                "proceedings-article": "inproceedings",
+                "conference-paper": "inproceedings",
+                "journal-article": "article",
+                "book": "book",
+                "book-chapter": "incollection",
+            }.get(authoritative.publication_type)
+            if entry_type:
+                entry["ENTRYTYPE"] = entry_type
+            venue_key = (
+                "booktitle"
+                if entry["ENTRYTYPE"] in {"inproceedings", "incollection"}
+                else "journal"
+            )
+            metadata = {
+                "title": authoritative.title,
+                "author": " and ".join(authoritative.authors),
+                "year": str(authoritative.year or ""),
+                venue_key: authoritative.journal,
+                "doi": authoritative.doi,
+                "url": authoritative.url,
+                "volume": authoritative.volume,
+                "number": authoritative.issue,
+                "pages": authoritative.pages,
+            }
+            for field, value in metadata.items():
+                if value:
+                    entry[field] = _bibtex_escape(value)
+            if authoritative.journal:
+                entry.pop("journal" if venue_key == "booktitle" else "booktitle", None)
+            return bibtexparser.dumps(database).strip()
         return candidate.bibtex.strip()
     entry_type = {
         "proceedings-article": "inproceedings",

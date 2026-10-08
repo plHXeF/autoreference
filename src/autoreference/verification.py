@@ -85,11 +85,34 @@ async def resolve_reference(
                 continue
             merged = found
         merged.metadata_status = "verified"
+        for field in (
+            "title",
+            "authors",
+            "year",
+            "journal",
+            "doi",
+            "url",
+            "publication_type",
+            "volume",
+            "issue",
+            "pages",
+        ):
+            value = getattr(found, field)
+            before = getattr(candidate, field) if candidate else None
+            if value and before != value:
+                merged.metadata_changes.append(
+                    {"field": field, "before": before, "after": value, "source": "crossref"}
+                )
+                setattr(merged, field, value)
+        for difference in merged.conflicts:
+            difference["resolution"] = "authoritative-metadata"
+            difference["resolved_value"] = getattr(merged, difference["field"], None)
         merged.verification = {
             "status": "verified",
             "method": "doi" if doi else "title-year-author",
             "url": base + "/" + quote(found.doi, safe=""),
             "authoritative_record": found.model_dump(mode="json"),
+            "normalization_revision": 1,
         }
         return merged
     if candidate:
