@@ -1,5 +1,10 @@
 # AutoReference
 
+[![Tests](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml/badge.svg)](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A portable agent skill that turns claims and TXT, DOCX, or TEX manuscripts into verified BibTeX references. No model API key required.
+
 为一句论断或 TXT、DOCX、TEX 论文整理参考文献、补找支持文献并返回 BibTeX。当前版本：**0.2.0a0**。
 
 用户安装 skill 后，可以向支持本地命令的 agent 说：
@@ -12,13 +17,22 @@
 
 需要 Python 3.11+、联网能力，以及能够读取 `SKILL.md`、执行本地命令的 agent。
 
+推荐从 [GitHub Releases](https://github.com/plHXeF/autoreference/releases) 下载 `autoreference-skill-0.2.0a0.zip`，解压后进入目录运行安装器。发布包已包含固定版本 wheel。
+
+也可以获取源码：
+
+```sh
+git clone https://github.com/plHXeF/autoreference.git
+cd autoreference
+```
+
 从仓库或解压后的发布包运行：
 
 ```sh
 python scripts/install_skill.py --skill-dir "/your/agent/skills/autoreference"
 ```
 
-目标必须是该 agent 能发现的 skill 目录。安装器创建独立运行环境，安装固定版本 AutoReference，并复制 skill 和启动脚本。无现成 wheel 时，仓库安装会先构建 wheel。安装过程会下载 Python 依赖；调用 skill 时不会临时安装。安装完后，让 agent 重新发现 skill。
+目标必须是该 agent 能发现的 skill 目录。实际操作流程见 [SKILL.md](skills/autoreference/SKILL.md)。安装器创建独立运行环境，安装固定版本 AutoReference，并复制 skill 和启动脚本。无现成 wheel 时，仓库安装会先构建 wheel。安装过程会下载 Python 依赖；调用 skill 时不会临时安装。安装完后，让 agent 重新发现 skill。
 
 启用可选校园访问：
 
@@ -120,4 +134,16 @@ python scripts/build_release.py
 
 重构前完整版本保存在本地 `backups/`，附 SHA-256 和逐文件验证清单；Git 标签 `pre-skill-20261008-9251a73` 指向原提交。备份包含被 Git 忽略的资料，因此只在本地保存，不进入发布包或版本库。
 
-源码、skill、测试和安装器由 Git 管理；运行环境、浏览器会话、原稿、报告和备份均被忽略。当前仍为 alpha：校园访问与平台兼容性以验收记录为准。仓库尚未选择开源许可证。
+源码、skill、测试和安装器由 Git 管理；运行环境、浏览器会话、原稿、报告和备份均被忽略。当前仍为 alpha：校园访问与平台兼容性以验收记录为准。本项目采用 [MIT License](LICENSE)，允许使用、修改和分发；依赖库仍遵循各自许可证。
+
+## 项目结构
+
+| 路径 | 内容 |
+|---|---|
+| `skills/autoreference/` | 可发布的 skill、跨平台启动器及 JSON 接口说明 |
+| `src/autoreference/` | 文档解析、检索、核验、任务、访问会话和导出实现 |
+| `scripts/` | 独立环境安装器、发布打包和安装验收 |
+| `tests/` | 原有功能回归与新流程测试 |
+| `docs/` | 架构和验收范围 |
+
+欢迎通过 GitHub Issues 报告可复现问题。提交样例前请去除未公开论文、凭据及个人信息。

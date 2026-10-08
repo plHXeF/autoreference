@@ -7,6 +7,8 @@ name = "autoreference"
 version = "0.2.0a0"
 description = "Find, assess, and export possible scholarly citations for a claim."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "AutoReference contributors" }]
 dependencies = [
@@ -18,6 +20,10 @@ dependencies = [
   "python-dotenv>=1.0,<2",
   "typer>=0.15,<1",
 ]
+
+[project.urls]
+Repository = "https://github.com/plHXeF/autoreference"
+Issues = "https://github.com/plHXeF/autoreference/issues"
 
 [project.optional-dependencies]
 web = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1"]
@@ -42,7 +48,7 @@ packages = ["src/autoreference"]
 include = ["src/autoreference/**/*.py", "src/autoreference/static/*"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "skills", "scripts", "docs", "README.md", "pyproject.toml", ".env.example"]
+include = ["src", "tests", "skills", "scripts", "docs", "README.md", "LICENSE", "pyproject.toml", ".env.example"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

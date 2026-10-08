@@ -38,6 +38,7 @@ def main():
     wheel = next(dist.glob(f"autoreference-{VERSION}-*.whl"))
     shutil.copyfile(wheel, bundle / wheel.name)
     shutil.copyfile(root / "README.md", bundle / "README.md")
+    shutil.copyfile(root / "LICENSE", bundle / "LICENSE")
     shutil.copyfile(root / ".env.example", bundle / ".env.example")
     if (root / "docs").is_dir():
         shutil.copytree(root / "docs", bundle / "docs")
