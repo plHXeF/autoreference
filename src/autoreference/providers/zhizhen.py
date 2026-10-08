@@ -8,9 +8,7 @@ from autoreference.config import Settings
 from autoreference.models import ReferenceCandidate
 from autoreference.providers.base import ProviderError
 
-MISSING_SELENIUM_MESSAGE = (
-    "Zhizhen support is not installed. Run: pip install -e .[zhizhen]"
-)
+MISSING_SELENIUM_MESSAGE = "Zhizhen support is not installed. Run: pip install -e .[zhizhen]"
 
 
 def _clean_detail_title(value: str) -> str:
@@ -34,21 +32,9 @@ class ZhizhenProvider:
         self.settings = settings
 
     def _create_driver(self):
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.service import Service
-        except ImportError as exc:
-            raise ProviderError(MISSING_SELENIUM_MESSAGE) from exc
+        from autoreference.access import create_driver
 
-        options = webdriver.ChromeOptions()
-        if self.settings.browser_headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--no-sandbox")
-        if self.settings.chrome_binary:
-            options.binary_location = self.settings.chrome_binary
-        service = Service(self.settings.chromedriver) if self.settings.chromedriver else Service()
-        return webdriver.Chrome(service=service, options=options)
+        return create_driver(self.settings, headless=self.settings.browser_headless)
 
     def _search_blocking(self, query: str, limit: int) -> list[ReferenceCandidate]:
         try:
@@ -67,7 +53,8 @@ class ZhizhenProvider:
             if "403" in driver.title:
                 raise ProviderError(
                     f"Zhizhen access was rejected (URL: {driver.current_url}; "
-                    f"title: {driver.title})"
+                    f"title: {driver.title})",
+                    code="access_denied",
                 )
             wait = WebDriverWait(driver, 15)
             wait.until(
@@ -75,9 +62,9 @@ class ZhizhenProvider:
             )
             links = [
                 element.get_attribute("href")
-                for element in driver.find_elements(
-                    By.CSS_SELECTOR, "h3.fx-column-title > a"
-                )[:limit]
+                for element in driver.find_elements(By.CSS_SELECTOR, "h3.fx-column-title > a")[
+                    :limit
+                ]
             ]
             for detail_url in filter(None, links):
                 try:
@@ -114,14 +101,26 @@ class ZhizhenProvider:
                     f"Zhizhen returned {len(links)} detail link(s), "
                     f"but none could be parsed: {detail}"
                 )
-        except ProviderError:
+        except ProviderError as exc:
+            from autoreference.access import save_status
+
+            save_status(self.settings, exc.code)
             raise
         except Exception as exc:
+            from autoreference.access import page_state, save_status
+
+            state = page_state(driver)
+            save_status(self.settings, state)
             raise ProviderError(
-                f"Zhizhen browser search failed: {_browser_error_detail(exc, driver)}"
+                "Zhizhen search could not complete; use public sources or check campus access.",
+                code=state,
             ) from exc
         finally:
             driver.quit()
+        if candidates:
+            from autoreference.access import save_status
+
+            save_status(self.settings, "ready")
         return candidates
 
     async def search(self, query: str, limit: int) -> list[ReferenceCandidate]:
