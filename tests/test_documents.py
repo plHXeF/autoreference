@@ -21,14 +21,19 @@ def test_docx_tables_fields_footnotes_and_references(tmp_path):
         archive.writestr(
             "word/document.xml",
             """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-        <w:p><w:r><w:t>A supported claim.</w:t></w:r><w:r><w:instrText> ADDIN ZOTERO_ITEM CSL_CITATION </w:instrText></w:r></w:p>
-        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Evidence in a table.</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
-        <w:p><w:r><w:t>References</w:t></w:r></w:p><w:p><w:r><w:t>[1] A. Author. Title. 2020.</w:t></w:r></w:p>
+        <w:p><w:r><w:t>A supported claim.</w:t></w:r>
+<w:r><w:instrText> ADDIN ZOTERO_ITEM CSL_CITATION </w:instrText></w:r></w:p>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Evidence in a table.</w:t></w:r></w:p></w:tc>
+</w:tr></w:tbl>
+        <w:p><w:r><w:t>References</w:t></w:r></w:p>
+<w:p><w:r><w:t>[1] A. Author. Title. 2020.</w:t></w:r></w:p>
         </w:body></w:document>""",
         )
         archive.writestr(
             "word/footnotes.xml",
-            """<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:r><w:t>A note.</w:t></w:r></w:p></w:footnote></w:footnotes>""",
+            """<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:footnote w:id="1"><w:p><w:r><w:t>A note.</w:t></w:r></w:p></w:footnote>
+</w:footnotes>""",
         )
     result = parse_document(path=file)
     assert any("table" in c["text"] for c in result["claims"])

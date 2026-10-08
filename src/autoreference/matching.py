@@ -71,6 +71,9 @@ def merge_candidate(
             if conflict not in data["conflicts"]:
                 data["conflicts"].append(conflict)
     data["citations"] = max(left.citations, right.citations)
+    if right.metadata_status == "verified":
+        data["metadata_status"] = right.metadata_status
+        data["verification"] = right.verification
     return ReferenceCandidate.model_validate(data)
 
 

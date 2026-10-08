@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
+from autoreference.agent_cli import access_app, doctor, task_app
 from autoreference.batch import analyze_paper
 from autoreference.config import Settings
 from autoreference.exporters import export_bibtex
@@ -18,6 +19,10 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Find, assess, and export possible scholarly citations.",
 )
+
+app.add_typer(task_app, name="task")
+app.add_typer(access_app, name="access")
+app.command()(doctor)
 
 
 def _settings() -> Settings:
@@ -32,9 +37,7 @@ def _source_list(value: str) -> list[str]:
 @app.command()
 def search(
     claim: Annotated[str, typer.Argument(help="Claim or sentence that needs citations")],
-    sources: Annotated[
-        str, typer.Option(help="Comma-separated providers")
-    ] = "openalex,crossref",
+    sources: Annotated[str, typer.Option(help="Comma-separated providers")] = "openalex,crossref",
     limit: Annotated[int, typer.Option(min=1, max=25)] = 8,
     no_llm: Annotated[
         bool, typer.Option(help="Disable LLM query expansion and assessment")
@@ -47,7 +50,9 @@ def search(
 
     async def run() -> None:
         selected_sources = _source_list(sources)
-        service = create_service(_settings(), include_zhizhen="zhizhen" in selected_sources)
+        service = create_service(
+            _settings(), include_zhizhen="zhizhen" in selected_sources, enable_llm=not no_llm
+        )
         try:
             result = await service.search(
                 SearchRequest(
@@ -85,7 +90,9 @@ def paper_command(
 
     async def run() -> None:
         selected_sources = _source_list(sources)
-        service = create_service(_settings(), include_zhizhen="zhizhen" in selected_sources)
+        service = create_service(
+            _settings(), include_zhizhen="zhizhen" in selected_sources, enable_llm=not no_llm
+        )
         try:
             report = await analyze_paper(
                 paper,
@@ -115,7 +122,11 @@ def web(
     reload: Annotated[bool, typer.Option(help="Development auto-reload")] = False,
 ) -> None:
     """Start the local Web UI."""
-    import uvicorn
+    try:
+        import uvicorn
+    except ImportError:
+        typer.echo("Install autoreference[web] to start the Web UI.", err=True)
+        raise typer.Exit(1) from None
 
     uvicorn.run("autoreference.web:app", host=host, port=port, reload=reload)
 

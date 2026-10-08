@@ -47,12 +47,22 @@ def _bibtex_escape(value: str) -> str:
 def to_bibtex(candidate: ReferenceCandidate) -> str:
     if candidate.bibtex and candidate.bibtex.lstrip().startswith("@"):
         return candidate.bibtex.strip()
-    entry_type = "article" if candidate.journal else "misc"
+    entry_type = {
+        "proceedings-article": "inproceedings",
+        "conference-paper": "inproceedings",
+        "book": "book",
+        "book-chapter": "incollection",
+    }.get(candidate.publication_type, "article" if candidate.journal else "misc")
     fields: list[tuple[str, str]] = [("title", candidate.title)]
     if candidate.authors:
         fields.append(("author", " and ".join(candidate.authors)))
     if candidate.journal:
-        fields.append(("journal", candidate.journal))
+        fields.append(
+            (
+                "booktitle" if entry_type in {"inproceedings", "incollection"} else "journal",
+                candidate.journal,
+            )
+        )
     for name, value in (
         ("volume", candidate.volume),
         ("number", candidate.issue),
