@@ -50,4 +50,3 @@ def search_tokens(text: str) -> set[str]:
         for index in range(max(0, len(chunk) - 1))
     }
     return latin | bigrams
-

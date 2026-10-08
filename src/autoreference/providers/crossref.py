@@ -8,6 +8,7 @@ import httpx
 
 from autoreference.models import ReferenceCandidate
 from autoreference.providers.base import ProviderError
+from autoreference.providers.http import request_json
 
 
 def _first(value: Any, default: str = "") -> str:
@@ -60,9 +61,8 @@ class CrossrefProvider:
         if self.contact_email:
             params["mailto"] = self.contact_email
         try:
-            response = await self.client.get(self.endpoint, params=params)
-            response.raise_for_status()
-            records = response.json().get("message", {}).get("items", [])
+            data = await request_json(self.client, "GET", self.endpoint, params=params)
+            records = data.get("message", {}).get("items", [])
         except (httpx.HTTPError, ValueError) as exc:
             raise ProviderError(f"Crossref request failed: {exc}") from exc
 
@@ -90,10 +90,13 @@ class CrossrefProvider:
                     doi=record.get("DOI"),
                     url=record.get("URL"),
                     publication_type=record.get("type"),
+                    volume=record.get("volume"),
+                    issue=record.get("issue"),
+                    pages=record.get("page"),
+                    citations=record.get("is-referenced-by-count") or 0,
                 )
             )
         return candidates
 
     async def close(self) -> None:
         await self.client.aclose()
-

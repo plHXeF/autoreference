@@ -34,3 +34,9 @@ driver/
 .DS_Store
 Thumbs.db
 
+
+# Local backups, installation environments, and private sessions
+backups/
+.runtime/
+.skill-test/
+.autoreference-access/

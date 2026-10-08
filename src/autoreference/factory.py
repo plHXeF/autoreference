@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from autoreference.config import Settings
-from autoreference.llm import LLMClient
+from autoreference.providers.anysearch import AnySearchProvider
 from autoreference.providers.base import SearchProvider
 from autoreference.providers.crossref import CrossrefProvider
 from autoreference.providers.openalex import OpenAlexProvider
@@ -15,6 +15,7 @@ def create_service(
     *,
     include_zhizhen: bool = False,
     lazy_zhizhen: bool = False,
+    enable_llm: bool = True,
 ) -> SearchService:
     headers = settings.public_api_headers()
     providers = {
@@ -22,6 +23,7 @@ def create_service(
             headers=headers,
             contact_email=settings.contact_email,
             timeout=settings.request_timeout_seconds,
+            api_key=settings.openalex_api_key,
         ),
         "crossref": CrossrefProvider(
             headers=headers,
@@ -29,6 +31,10 @@ def create_service(
             timeout=settings.request_timeout_seconds,
         ),
     }
+    if settings.anysearch_api_key:
+        providers["anysearch"] = AnySearchProvider(
+            api_key=settings.anysearch_api_key, timeout=settings.request_timeout_seconds
+        )
     provider_factories: dict[str, Callable[[], SearchProvider]] = {}
     if include_zhizhen:
         from autoreference.providers.zhizhen import ZhizhenProvider
@@ -43,5 +49,11 @@ def create_service(
 
         provider_factories["zhizhen"] = create_zhizhen
 
-    llm = LLMClient(settings) if settings.llm_enabled else None
+    llm = None
+    if enable_llm and settings.llm_enabled:
+        try:
+            from autoreference.llm import LLMClient
+        except ImportError as exc:
+            raise RuntimeError("Install autoreference[llm] to use the model API.") from exc
+        llm = LLMClient(settings)
     return SearchService(providers=providers, llm=llm, provider_factories=provider_factories)

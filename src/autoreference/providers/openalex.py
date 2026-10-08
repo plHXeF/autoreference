@@ -4,6 +4,7 @@ import httpx
 
 from autoreference.models import ReferenceCandidate
 from autoreference.providers.base import ProviderError
+from autoreference.providers.http import request_json
 
 
 def _abstract_from_inverted_index(index: dict[str, list[int]] | None) -> str:
@@ -24,10 +25,12 @@ class OpenAlexProvider:
         *,
         headers: dict[str, str],
         contact_email: str | None = None,
+        api_key: str | None = None,
         timeout: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.contact_email = contact_email
+        self.api_key = api_key
         self.client = httpx.AsyncClient(
             headers=headers,
             timeout=timeout,
@@ -37,12 +40,13 @@ class OpenAlexProvider:
 
     async def search(self, query: str, limit: int) -> list[ReferenceCandidate]:
         params: dict[str, str | int] = {"search": query, "per-page": limit}
+        if self.api_key:
+            params["api_key"] = self.api_key
         if self.contact_email:
             params["mailto"] = self.contact_email
         try:
-            response = await self.client.get(self.endpoint, params=params)
-            response.raise_for_status()
-            records = response.json().get("results", [])
+            data = await request_json(self.client, "GET", self.endpoint, params=params)
+            records = data.get("results", [])
         except (httpx.HTTPError, ValueError) as exc:
             raise ProviderError(f"OpenAlex request failed: {exc}") from exc
 
@@ -59,9 +63,7 @@ class OpenAlexProvider:
                     source=self.name,
                     source_id=record.get("id"),
                     title=title,
-                    abstract=_abstract_from_inverted_index(
-                        record.get("abstract_inverted_index")
-                    ),
+                    abstract=_abstract_from_inverted_index(record.get("abstract_inverted_index")),
                     authors=[
                         authorship.get("author", {}).get("display_name", "").strip()
                         for authorship in record.get("authorships", [])
@@ -72,10 +74,21 @@ class OpenAlexProvider:
                     doi=doi,
                     url=doi or primary_location.get("landing_page_url") or record.get("id"),
                     publication_type=record.get("type"),
+                    volume=(record.get("biblio") or {}).get("volume"),
+                    issue=(record.get("biblio") or {}).get("issue"),
+                    pages="-".join(
+                        str(v)
+                        for v in [
+                            (record.get("biblio") or {}).get("first_page"),
+                            (record.get("biblio") or {}).get("last_page"),
+                        ]
+                        if v
+                    )
+                    or None,
+                    citations=record.get("cited_by_count") or 0,
                 )
             )
         return candidates
 
     async def close(self) -> None:
         await self.client.aclose()
-

@@ -29,6 +29,10 @@ def _env_int(name: str, default: int) -> int:
 class Settings:
     """Runtime configuration loaded from environment variables only."""
 
+    anysearch_api_key: str | None = None
+    openalex_api_key: str | None = None
+    access_dir: str = ".autoreference-access"
+    campus_login_url: str | None = None
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     query_model: str = "gpt-5.6-luna"
@@ -40,9 +44,7 @@ class Settings:
     contact_email: str | None = None
     user_agent: str = "AutoReference/0.1"
     request_timeout_seconds: float = 30.0
-    zhizhen_url: str = (
-        "https://www.zhizhen.com/s?&strchoren=1&size=15&isort=0&x=0_7083&sw={query}"
-    )
+    zhizhen_url: str = "https://www.zhizhen.com/s?&strchoren=1&size=15&isort=0&x=0_7083&sw={query}"
     chrome_binary: str | None = None
     chromedriver: str | None = None
     browser_headless: bool = True
@@ -53,26 +55,25 @@ class Settings:
         valid_efforts = {"auto", "none", "low", "medium", "high", "xhigh", "max"}
         if effort not in valid_efforts:
             raise ValueError(
-                "AUTOREFERENCE_REASONING_EFFORT must be one of "
-                + ", ".join(sorted(valid_efforts))
+                "AUTOREFERENCE_REASONING_EFFORT must be one of " + ", ".join(sorted(valid_efforts))
             )
 
         api_mode = os.getenv("AUTOREFERENCE_API_MODE", "responses").strip().lower()
         if api_mode not in {"responses", "chat_completions"}:
-            raise ValueError(
-                "AUTOREFERENCE_API_MODE must be responses or chat_completions"
-            )
+            raise ValueError("AUTOREFERENCE_API_MODE must be responses or chat_completions")
 
         raw_timeout = os.getenv("AUTOREFERENCE_REQUEST_TIMEOUT_SECONDS", "30")
         try:
             timeout = float(raw_timeout)
         except ValueError as exc:
-            raise ValueError(
-                "AUTOREFERENCE_REQUEST_TIMEOUT_SECONDS must be a number"
-            ) from exc
+            raise ValueError("AUTOREFERENCE_REQUEST_TIMEOUT_SECONDS must be a number") from exc
 
         key = os.getenv("OPENAI_API_KEY") or os.getenv("AUTOREFERENCE_API_KEY")
         return cls(
+            anysearch_api_key=os.getenv("ANYSEARCH_API_KEY") or None,
+            openalex_api_key=os.getenv("OPENALEX_API_KEY") or None,
+            access_dir=os.getenv("AUTOREFERENCE_ACCESS_DIR", ".autoreference-access"),
+            campus_login_url=os.getenv("AUTOREFERENCE_CAMPUS_LOGIN_URL") or None,
             openai_api_key=key.strip() if key and key.strip() else None,
             openai_base_url=os.getenv(
                 "AUTOREFERENCE_OPENAI_BASE_URL", "https://api.openai.com/v1"
@@ -80,12 +81,8 @@ class Settings:
             query_model=os.getenv("AUTOREFERENCE_QUERY_MODEL", "gpt-5.6-luna"),
             judge_model=os.getenv("AUTOREFERENCE_JUDGE_MODEL", "gpt-5.6-terra"),
             reasoning_effort=effort,  # type: ignore[arg-type]
-            query_max_output_tokens=_env_int(
-                "AUTOREFERENCE_QUERY_MAX_OUTPUT_TOKENS", 4_000
-            ),
-            judge_max_output_tokens=_env_int(
-                "AUTOREFERENCE_JUDGE_MAX_OUTPUT_TOKENS", 12_000
-            ),
+            query_max_output_tokens=_env_int("AUTOREFERENCE_QUERY_MAX_OUTPUT_TOKENS", 4_000),
+            judge_max_output_tokens=_env_int("AUTOREFERENCE_JUDGE_MAX_OUTPUT_TOKENS", 12_000),
             api_mode=api_mode,  # type: ignore[arg-type]
             contact_email=os.getenv("AUTOREFERENCE_CONTACT_EMAIL") or None,
             user_agent=os.getenv("AUTOREFERENCE_USER_AGENT", "AutoReference/0.1"),
@@ -113,4 +110,3 @@ class Settings:
         if self.contact_email and "mailto:" not in user_agent:
             user_agent = f"{user_agent} (mailto:{self.contact_email})"
         return {"User-Agent": user_agent, "Accept": "application/json"}
-

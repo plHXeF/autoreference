@@ -76,4 +76,3 @@ async def analyze_paper(
         export_bibtex(list(selected_by_key.values())), encoding="utf-8"
     )
     return report
-

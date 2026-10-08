@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from autoreference.llm import LLMClient
+from autoreference.matching import deduplicate
 from autoreference.models import (
     CitationAssessment,
     ReferenceCandidate,
@@ -14,36 +15,8 @@ from autoreference.models import (
 from autoreference.providers.base import SearchProvider
 from autoreference.text import search_tokens
 
-
-def _candidate_key(candidate: ReferenceCandidate) -> str:
-    if candidate.doi:
-        return f"doi:{candidate.doi}"
-    normalized_title = "".join(candidate.title.casefold().split())
-    return f"title:{normalized_title}"
-
-
-def _merge_candidate(left: ReferenceCandidate, right: ReferenceCandidate) -> ReferenceCandidate:
-    data = left.model_dump()
-    data["source"] = "+".join(dict.fromkeys([*left.source.split("+"), *right.source.split("+")]))
-    for field in ("abstract", "journal", "doi", "url", "publication_type", "bibtex"):
-        if not data.get(field) and getattr(right, field):
-            data[field] = getattr(right, field)
-    if not data.get("authors") and right.authors:
-        data["authors"] = right.authors
-    if not data.get("year") and right.year:
-        data["year"] = right.year
-    return ReferenceCandidate.model_validate(data)
-
-
-def deduplicate(candidates: Iterable[ReferenceCandidate]) -> list[ReferenceCandidate]:
-    unique: dict[str, ReferenceCandidate] = {}
-    for candidate in candidates:
-        key = _candidate_key(candidate)
-        if key in unique:
-            unique[key] = _merge_candidate(unique[key], candidate)
-        else:
-            unique[key] = candidate
-    return list(unique.values())
+if TYPE_CHECKING:
+    from autoreference.llm import LLMClient
 
 
 def heuristic_assessment(claim: str, candidate: ReferenceCandidate) -> CitationAssessment:
@@ -142,9 +115,9 @@ class SearchService:
         for candidate in candidates:
             candidate.assessment = heuristic_assessment(request.claim, candidate)
         candidates.sort(
-            key=lambda candidate: candidate.assessment.relevance_score
-            if candidate.assessment
-            else 0,
+            key=lambda candidate: (
+                candidate.assessment.relevance_score if candidate.assessment else 0
+            ),
             reverse=True,
         )
         candidates = candidates[: self.max_candidates_for_judging]
@@ -155,9 +128,9 @@ class SearchService:
                 for candidate, assessment in zip(candidates, assessments, strict=True):
                     candidate.assessment = assessment
                 candidates.sort(
-                    key=lambda candidate: candidate.assessment.relevance_score
-                    if candidate.assessment
-                    else 0,
+                    key=lambda candidate: (
+                        candidate.assessment.relevance_score if candidate.assessment else 0
+                    ),
                     reverse=True,
                 )
                 llm_used = True

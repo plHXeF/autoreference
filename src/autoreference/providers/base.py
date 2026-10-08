@@ -16,3 +16,6 @@ class SearchProvider(Protocol):
 class ProviderError(RuntimeError):
     """A provider failed without invalidating results from other providers."""
 
+    def __init__(self, message: str, *, code: str = "request_failed") -> None:
+        super().__init__(message)
+        self.code = code

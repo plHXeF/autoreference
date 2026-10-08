@@ -53,6 +53,13 @@ def to_bibtex(candidate: ReferenceCandidate) -> str:
         fields.append(("author", " and ".join(candidate.authors)))
     if candidate.journal:
         fields.append(("journal", candidate.journal))
+    for name, value in (
+        ("volume", candidate.volume),
+        ("number", candidate.issue),
+        ("pages", candidate.pages),
+    ):
+        if value:
+            fields.append((name, value))
     if candidate.year:
         fields.append(("year", str(candidate.year)))
     if candidate.doi:

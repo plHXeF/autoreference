@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CitationAssessment(BaseModel):
@@ -27,6 +27,26 @@ class ReferenceCandidate(BaseModel):
     publication_type: str | None = None
     bibtex: str | None = None
     assessment: CitationAssessment | None = None
+    sources: list[str] = Field(default_factory=list)
+    source_records: list[dict[str, str]] = Field(default_factory=list)
+    volume: str | None = None
+    issue: str | None = None
+    pages: str | None = None
+    citations: int = 0
+    match_method: str = "single-source"
+    conflicts: list[dict] = Field(default_factory=list)
+    metadata_status: str = "unverified"
+    verification: dict = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def provenance(self) -> ReferenceCandidate:
+        if not self.sources:
+            self.sources = list(dict.fromkeys(self.source.split("+")))
+        if not self.source_records:
+            self.source_records = [
+                {"source": self.source, "id": self.source_id or "", "url": self.url or ""}
+            ]
+        return self
 
     @field_validator("doi")
     @classmethod
@@ -76,4 +96,3 @@ class SearchResult(BaseModel):
 
 class ExportRequest(BaseModel):
     candidates: list[ReferenceCandidate]
-

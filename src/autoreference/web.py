@@ -28,7 +28,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="AutoReference",
-    version="0.1.0a0",
+    version="0.2.0a0",
     description="Candidate citation search. Human verification is required.",
     lifespan=lifespan,
 )
