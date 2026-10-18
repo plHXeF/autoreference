@@ -48,7 +48,7 @@ packages = ["src/autoreference"]
 include = ["src/autoreference/**/*.py", "src/autoreference/static/*"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "skills", "scripts", "docs", "README.md", "LICENSE", "pyproject.toml", ".env.example"]
+include = ["src", "skills", "scripts", "docs", "README.md", "LICENSE", "pyproject.toml", ".env.example"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
