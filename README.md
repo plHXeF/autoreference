@@ -1,6 +1,6 @@
 # AutoReference
 
-[![Tests](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml/badge.svg)](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml)
+[![Checks](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml/badge.svg)](https://github.com/plHXeF/autoreference/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A portable agent skill that turns claims and TXT, DOCX, or TEX manuscripts into verified BibTeX references. No model API key required.
